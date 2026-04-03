@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+
+<html lang="da">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Teleprompter" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <link rel="manifest" href="manifest.json" />
+  <title>Teleprompter</title>
+  <style>
+    :root {
+      --red:    #e63946;
+      --amber:  #f4a261;
+      --green:  #57cc99;
+      --bg:     #0a0a0a;
+      --surface:#141414;
+      --border: #242424;
+      --text:   #f0ede8;
+      --muted:  #555;
+      --font-size: 52px;
+    }
+
+```
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.screen { position: fixed; inset: 0; display: flex; flex-direction: column; }
+.screen.hidden { display: none !important; }
+
+/* ── EDITOR ── */
+#editor-screen {
+  background: var(--bg);
+  padding-top: env(safe-area-inset-top, 20px);
+}
+
+.editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-logo {
+  display: flex; align-items: center; gap: 10px;
+}
+.logo-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 8px var(--red);
+}
+.app-name {
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.start-btn {
+  background: var(--red);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 11px 24px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, transform 0.1s;
+}
+.start-btn:active { background: #c1121f; transform: scale(0.96); }
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.settings-row::-webkit-scrollbar { display: none; }
+
+.setting-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 20px;
+  flex-shrink: 0;
+}
+.setting-label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.setting-value {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: var(--amber);
+  min-width: 28px;
+  text-align: center;
+}
+.step-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.step-btn:active { background: #333; }
+.divider { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+
+.textarea-wrap {
+  flex: 1; padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 8px;
+  overflow: hidden;
+}
+.textarea-label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+#script-input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 300;
+  line-height: 1.7;
+  padding: 16px;
+  resize: none;
+  outline: none;
+  -webkit-appearance: none;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+#script-input:focus { border-color: rgba(230,57,70,0.5); }
+#script-input::placeholder { color: var(--muted); }
+.word-count {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  padding-bottom: env(safe-area-inset-bottom, 8px);
+}
+
+/* ── PROMPTER ── */
+#prompter-screen {
+  background: #000;
+  touch-action: none;
+}
+
+#prompter-screen::before, #prompter-screen::after {
+  content: '';
+  position: fixed; left: 0; right: 0;
+  height: 130px; z-index: 10; pointer-events: none;
+}
+#prompter-screen::before {
+  top: 0;
+  background: linear-gradient(to bottom, #000 20%, transparent 100%);
+}
+#prompter-screen::after {
+  bottom: 0;
+  background: linear-gradient(to top, #000 20%, transparent 100%);
+}
+
+.focus-line {
+  position: fixed; left: 0; right: 0; top: 40%;
+  height: 2px;
+  background: linear-gradient(to right, transparent, var(--red) 20%, var(--red) 80%, transparent);
+  opacity: 0.45; z-index: 9; pointer-events: none;
+}
+
+#scroll-container {
+  position: absolute; left: 0; right: 0; top: 0;
+  will-change: transform;
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+#prompter-text {
+  padding: 45vh 32px 55vh;
+  font-size: var(--font-size);
+  font-weight: 400;
+  line-height: 1.6;
+  color: rgba(255,255,255,0.9);
+  letter-spacing: 0.01em;
+}
+
+.word {
+  display: inline;
+  transition: color 0.15s;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+.word.past   { color: rgba(255,255,255,0.2); }
+.word.active {
+  color: var(--amber);
+  text-shadow: 0 0 18px rgba(244,162,97,0.35);
+}
+.word.future { color: rgba(255,255,255,0.88); }
+
+.progress-wrap {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 3px; z-index: 25;
+  background: rgba(255,255,255,0.08);
+}
+#progress-bar {
+  height: 100%;
+  background: var(--red);
+  width: 0%;
+  transition: width 0.3s;
+}
+
+.hud {
+  position: fixed; top: 0; left: 0; right: 0;
+  padding: 14px 18px;
+  padding-top: max(14px, env(safe-area-inset-top));
+  display: flex; align-items: center; justify-content: space-between;
+  z-index: 20;
+  transition: opacity 0.5s;
+}
+.hud.faded { opacity: 0; pointer-events: none; }
+
+.hud-pill {
+  background: rgba(0,0,0,0.65);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: rgba(255,255,255,0.65);
+  display: flex; align-items: center; gap: 6px;
+}
+
+.mic-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: background 0.2s, box-shadow 0.2s;
+  flex-shrink: 0;
+}
+.mic-dot.listening {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.mic-dot.paused {
+  background: var(--amber);
+  box-shadow: 0 0 6px var(--amber);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.8); }
+}
+
+.prompter-controls {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  padding: 16px 28px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex; align-items: center; justify-content: space-around;
+  z-index: 20;
+  background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+  transition: opacity 0.5s;
+}
+.prompter-controls.faded { opacity: 0; pointer-events: none; }
+
+.ctrl-btn {
+  background: rgba(255,255,255,0.1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #fff;
+  border-radius: 50%;
+  width: 52px; height: 52px;
+  font-size: 20px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, transform 0.1s;
+}
+.ctrl-btn:active { background: rgba(255,255,255,0.25); transform: scale(0.92); }
+
+.ctrl-btn.main {
+  width: 70px; height: 70px; font-size: 30px;
+  background: var(--red); border-color: transparent;
+}
+.ctrl-btn.main.active { background: #1a6b45; }
+
+#interim-display {
+  position: fixed;
+  bottom: 110px; left: 24px; right: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: rgba(255,255,255,0.28);
+  font-style: italic;
+  z-index: 15;
+  pointer-events: none;
+  min-height: 18px;
+}
+```
+
+  </style>
+</head>
+<body>
+
+<!-- ═══ EDITOR ═══ -->
+
+<div id="editor-screen" class="screen">
+  <div class="editor-header">
+    <div class="app-logo">
+      <div class="logo-dot"></div>
+      <span class="app-name">Teleprompter</span>
+    </div>
+    <button class="start-btn" onclick="startPrompter()">START ▶</button>
+  </div>
+
+  <div class="settings-row">
+    <div class="setting-group">
+      <span class="setting-label">Tekststørrelse</span>
+      <button class="step-btn" onclick="adjustFontSize(-4)">−</button>
+      <span class="setting-value" id="size-display">52</span>
+      <button class="step-btn" onclick="adjustFontSize(4)">+</button>
+    </div>
+    <div class="divider"></div>
+    <div class="setting-group">
+      <span class="setting-label">Sprog</span>
+      <button class="step-btn" id="lang-btn" onclick="cycleLang()"
+        style="width:auto;padding:0 10px;font-size:12px;letter-spacing:0.04em;">DA</button>
+    </div>
+    <div class="divider"></div>
+    <div class="setting-group">
+      <span class="setting-label">Spejl</span>
+      <button class="step-btn" id="mirror-btn" onclick="toggleMirror()"
+        style="width:auto;padding:0 10px;font-size:12px;">AUS</button>
+    </div>
+  </div>
+
+  <div class="textarea-wrap">
+    <span class="textarea-label">Manuskript</span>
+    <textarea id="script-input"
+      placeholder="Indsæt dit manuskript her...&#10;&#10;Mikrofonen lytter til din oplæsning og fremhæver det aktive ord. Stopper du med at tale, stopper scrollet automatisk."
+      oninput="updateWordCount()"></textarea>
+    <div class="word-count" id="word-count">0 ord</div>
+  </div>
+</div>
+
+<!-- ═══ PROMPTER ═══ -->
+
+<div id="prompter-screen" class="screen hidden">
+  <div class="progress-wrap"><div id="progress-bar"></div></div>
+  <div class="focus-line"></div>
+
+  <div id="scroll-container">
+    <div id="prompter-text"></div>
+  </div>
+
+  <div class="hud" id="hud">
+    <div class="hud-pill">
+      <div class="mic-dot" id="mic-dot"></div>
+      <span id="hud-status">Klar</span>
+    </div>
+    <div class="hud-pill" id="hud-pct">0%</div>
+  </div>
+
+  <div id="interim-display"></div>
+
+  <div class="prompter-controls" id="prompter-controls">
+    <button class="ctrl-btn" onclick="jumpWords(-8)" title="Tilbage">«</button>
+    <button class="ctrl-btn main" id="mic-btn" onclick="toggleListening()">🎙</button>
+    <button class="ctrl-btn" onclick="jumpWords(8)" title="Frem">»</button>
+    <button class="ctrl-btn" onclick="stopPrompter()" title="Stop">✕</button>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════
+   STATE
+════════════════════════════════ */
+let words        = [];   // normalized words for matching
+let wordEls      = [];   // DOM spans
+let currentIdx   = 0;
+let isListening  = false;
+let isMirrored   = false;
+let fontSize     = 52;
+let recognition  = null;
+let restartTimer = null;
+let fadeTimer    = null;
+
+const LANGS = [
+  { code: 'da-DK', label: 'DA' },
+  { code: 'en-US', label: 'EN' },
+  { code: 'no-NO', label: 'NO' },
+  { code: 'sv-SE', label: 'SV' },
+  { code: 'de-DE', label: 'DE' },
+];
+let langIdx = 0;
+
+/* ════════════════════════════════
+   EDITOR
+════════════════════════════════ */
+function adjustFontSize(d) {
+  fontSize = Math.max(24, Math.min(96, fontSize + d));
+  document.getElementById('size-display').textContent = fontSize;
+  document.documentElement.style.setProperty('--font-size', fontSize + 'px');
+}
+
+function cycleLang() {
+  langIdx = (langIdx + 1) % LANGS.length;
+  document.getElementById('lang-btn').textContent = LANGS[langIdx].label;
+}
+
+function toggleMirror() {
+  isMirrored = !isMirrored;
+  const btn = document.getElementById('mirror-btn');
+  btn.textContent = isMirrored ? 'PÅ' : 'AUS';
+  btn.style.color = isMirrored ? 'var(--amber)' : '';
+}
+
+function updateWordCount() {
+  const t = document.getElementById('script-input').value.trim();
+  document.getElementById('word-count').textContent =
+    (t ? t.split(/\s+/).length : 0) + ' ord';
+}
+
+/* ════════════════════════════════
+   BUILD WORD SPANS
+════════════════════════════════ */
+function normalize(w) {
+  return w.toLowerCase().replace(/[^a-zæøåéàüöä0-9]/g, '');
+}
+
+function buildSpans(text) {
+  const container = document.getElementById('prompter-text');
+  container.innerHTML = '';
+  wordEls = [];
+  words   = [];
+
+  text.split(/(\n+)/).forEach(part => {
+    if (/^\n+$/.test(part)) {
+      container.appendChild(document.createElement('br'));
+      if (part.length > 1) container.appendChild(document.createElement('br'));
+    } else {
+      part.split(/(\s+)/).forEach(tok => {
+        if (/^\s+$/.test(tok)) {
+          container.appendChild(document.createTextNode(' '));
+        } else if (tok) {
+          const span = document.createElement('span');
+          span.className = 'word future';
+          span.textContent = tok;
+          container.appendChild(span);
+          words.push(normalize(tok));
+          wordEls.push(span);
+        }
+      });
+    }
+  });
+}
+
+/* ════════════════════════════════
+   SCROLL & HIGHLIGHT
+════════════════════════════════ */
+function applyHighlight(idx) {
+  wordEls.forEach((el, i) => {
+    el.className = 'word ' + (i < idx ? 'past' : i === idx ? 'active' : 'future');
+  });
+  const pct = words.length > 1 ? Math.round((idx / (words.length - 1)) * 100) : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('hud-pct').textContent = pct + '%';
+}
+
+function scrollToIdx(idx) {
+  const el = wordEls[idx];
+  if (!el) return;
+  const screenH = document.getElementById('prompter-screen').offsetHeight;
+  const targetY = el.offsetTop - screenH * 0.40;
+  document.getElementById('scroll-container').style.transform =
+    `translateY(${-Math.max(0, targetY)}px)`;
+}
+
+function setIdx(idx) {
+  idx = Math.max(0, Math.min(words.length - 1, idx));
+  currentIdx = idx;
+  applyHighlight(idx);
+  scrollToIdx(idx);
+}
+
+function jumpWords(n) {
+  setIdx(currentIdx + n);
+  showControls();
+}
+
+/* ════════════════════════════════
+   FUZZY WORD MATCHING
+   Dice bigram similarity
+════════════════════════════════ */
+function diceSim(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return a[0] === b[0] ? 0.65 : 0;
+  const bigrams = s => {
+    const m = {};
+    for (let i = 0; i < s.length - 1; i++) {
+      const k = s[i] + s[i+1];
+      m[k] = (m[k] || 0) + 1;
+    }
+    return m;
+  };
+  const A = bigrams(a), B = bigrams(b);
+  let hits = 0;
+  Object.keys(A).forEach(k => { if (B[k]) hits += Math.min(A[k], B[k]); });
+  return (2 * hits) / (a.length + b.length - 2);
+}
+
+/* ════════════════════════════════
+   SPEECH → WORD POSITION
+   Match each final transcript against
+   the script, advancing currentIdx
+════════════════════════════════ */
+function matchTranscript(transcript, isFinal) {
+  const heard = transcript.toLowerCase()
+    .replace(/[^a-zæøåéàüöä0-9\s]/g, '')
+    .trim().split(/\s+/).filter(w => w.length > 0);
+
+  if (!heard.length) return;
+
+  // For interim: only match the last heard word (fast feedback)
+  // For final: walk through all heard words sequentially
+  if (isFinal) {
+    let searchFrom = currentIdx;
+    heard.forEach(hw => {
+      const WINDOW = 25;
+      let bestIdx = -1, bestScore = 0;
+      const end = Math.min(words.length, searchFrom + WINDOW);
+      for (let i = searchFrom; i < end; i++) {
+        const s = diceSim(hw, words[i]);
+        if (s > bestScore && s > 0.58) { bestScore = s; bestIdx = i; }
+      }
+      if (bestIdx !== -1) {
+        setIdx(bestIdx);
+        searchFrom = bestIdx + 1;
+      }
+    });
+  } else {
+    // Interim: match only last heard word for snappy response
+    const hw = heard[heard.length - 1];
+    const WINDOW = 20;
+    let bestIdx = -1, bestScore = 0;
+    const end = Math.min(words.length, currentIdx + WINDOW);
+    for (let i = currentIdx; i < end; i++) {
+      const s = diceSim(hw, words[i]);
+      if (s > bestScore && s > 0.65) { bestScore = s; bestIdx = i; }
+    }
+    if (bestIdx !== -1 && bestIdx > currentIdx) {
+      setIdx(bestIdx);
+    }
+  }
+}
+
+/* ════════════════════════════════
+   SPEECH RECOGNITION
+════════════════════════════════ */
+function buildRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+
+  const r = new SR();
+  r.continuous      = true;
+  r.interimResults  = true;
+  r.maxAlternatives = 1;
+  r.lang            = LANGS[langIdx].code;
+
+  r.onstart = () => setHudState('listening');
+
+  r.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+        matchTranscript(t, true);
+        document.getElementById('interim-display').textContent = '';
+      } else {
+        interim += t;
+        matchTranscript(t, false);
+      }
+    }
+    if (interim) document.getElementById('interim-display').textContent = interim;
+  };
+
+  r.onspeechstart = () => setHudState('listening');
+  r.onspeechend   = () => {
+    setHudState('paused');
+    document.getElementById('interim-display').textContent = '';
+  };
+
+  r.onerror = e => {
+    if (e.error === 'no-speech' || e.error === 'aborted') return;
+    console.warn('SR:', e.error);
+    setHudState('paused');
+  };
+
+  r.onend = () => {
+    if (isListening) {
+      restartTimer = setTimeout(() => {
+        try { recognition.start(); } catch(ex) {}
+      }, 250);
+    }
+  };
+
+  return r;
+}
+
+function setHudState(state) {
+  const dot = document.getElementById('mic-dot');
+  const lbl = document.getElementById('hud-status');
+  dot.className = 'mic-dot';
+  if (state === 'listening') {
+    dot.classList.add('listening');
+    lbl.textContent = 'Lytter…';
+  } else if (state === 'paused') {
+    dot.classList.add('paused');
+    lbl.textContent = 'Pause — venter…';
+  } else {
+    lbl.textContent = 'Klar';
+  }
+}
+
+function toggleListening() {
+  isListening ? stopListening() : startListening();
+  showControls();
+  if (isListening) scheduleControlsFade();
+}
+
+function startListening() {
+  if (!recognition) recognition = buildRecognition();
+  if (!recognition) {
+    alert('Stemmegenkendelse ikke tilgængeligt.\n\nBrug Safari på iOS 15+ eller Chrome på Android.');
+    return;
+  }
+  isListening = true;
+  recognition.lang = LANGS[langIdx].code;
+  document.getElementById('mic-btn').classList.add('active');
+  document.getElementById('mic-btn').textContent = '⏹';
+  try { recognition.start(); } catch(e) {}
+}
+
+function stopListening() {
+  isListening = false;
+  clearTimeout(restartTimer);
+  document.getElementById('mic-btn').classList.remove('active');
+  document.getElementById('mic-btn').textContent = '🎙';
+  document.getElementById('interim-display').textContent = '';
+  setHudState('idle');
+  try { recognition.stop(); } catch(e) {}
+}
+
+/* ════════════════════════════════
+   CONTROLS FADE
+════════════════════════════════ */
+function showControls() {
+  document.getElementById('prompter-controls').classList.remove('faded');
+  document.getElementById('hud').classList.remove('faded');
+  clearTimeout(fadeTimer);
+}
+function scheduleControlsFade() {
+  clearTimeout(fadeTimer);
+  fadeTimer = setTimeout(() => {
+    if (isListening) {
+      document.getElementById('prompter-controls').classList.add('faded');
+      document.getElementById('hud').classList.add('faded');
+    }
+  }, 4000);
+}
+
+document.getElementById('prompter-screen').addEventListener('click', e => {
+  if (e.target.closest('.ctrl-btn')) return;
+  if (document.getElementById('prompter-controls').classList.contains('faded')) {
+    showControls();
+    if (isListening) scheduleControlsFade();
+  }
+});
+
+/* ════════════════════════════════
+   SWIPE — manual word jump
+════════════════════════════════ */
+let touchStartY = null, touchStartIdx = 0;
+const ps = document.getElementById('prompter-screen');
+
+ps.addEventListener('touchstart', e => {
+  if (e.target.closest('.ctrl-btn')) return;
+  touchStartY = e.touches[0].clientY;
+  touchStartIdx = currentIdx;
+}, { passive: true });
+
+ps.addEventListener('touchmove', e => {
+  if (touchStartY === null || e.target.closest('.ctrl-btn')) return;
+  const dy = touchStartY - e.touches[0].clientY;
+  const delta = Math.round(dy / (fontSize * 1.6 * 0.35));
+  setIdx(touchStartIdx + delta);
+}, { passive: true });
+
+ps.addEventListener('touchend', () => { touchStartY = null; }, { passive: true });
+
+/* ════════════════════════════════
+   START / STOP
+════════════════════════════════ */
+function startPrompter() {
+  const text = document.getElementById('script-input').value.trim();
+  if (!text) { alert('Indsæt venligst et manuskript først.'); return; }
+
+  buildSpans(text);
+  currentIdx = 0;
+
+  document.documentElement.style.setProperty('--font-size', fontSize + 'px');
+
+  isMirrored
+    ? document.getElementById('prompter-text').style.transform = 'scaleX(-1)'
+    : document.getElementById('prompter-text').style.transform = '';
+
+  document.getElementById('editor-screen').classList.add('hidden');
+  document.getElementById('prompter-screen').classList.remove('hidden');
+  document.getElementById('scroll-container').style.transform = 'translateY(0)';
+  applyHighlight(0);
+
+  showControls();
+  setTimeout(() => startListening(), 400);
+  scheduleControlsFade();
+}
+
+function stopPrompter() {
+  stopListening();
+  recognition = null;
+  clearTimeout(fadeTimer);
+  document.getElementById('prompter-screen').classList.add('hidden');
+  document.getElementById('editor-screen').classList.remove('hidden');
+}
+
+/* ════════════════════════════════
+   SERVICE WORKER
+════════════════════════════════ */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+updateWordCount();
+</script>
+
+</body>
+</html>
