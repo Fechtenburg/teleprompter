@@ -549,76 +549,43 @@ function diceSim(a, b) {
 
 /* ════════════════════════════════
    SPEECH → WORD POSITION
+
+   Core insight: Safari delivers a full sentence as one final result the
+   moment you pause. Walking through every word in that sentence causes
+   the text to jump far ahead. Instead we only look at the LAST word of
+   each result — that is the word you most recently said — and search for
+   it within a tight window ahead of currentIdx.
 ════════════════════════════════ */
-function matchTranscript(transcript, isFinal) {
-  if (!isFinal) return;
+function matchTranscript(transcript) {
   if (srBlocked) return;
+  if (!speechActive) return;
 
-  const now = Date.now();
-
-  // Hard block: speech has ended and we're still in the grace window.
-  // Safari routinely delivers final results 100-300ms after onspeechend.
-  if (!speechActive && (now - speechEndedAt) < POST_SPEECH_GRACE) return;
-
-  // Also block if speech is not active at all (pause state)
-  if (!speechActive && speechEndedAt > 0) return;
-
-  // Normalise transcript for comparison
   const cleaned = transcript.toLowerCase()
     .replace(/[^a-zæøåéàüöä0-9\s]/g, '').trim();
 
-  // PHANTOM CHECK: if this transcript is identical (or nearly so) to the
-  // last one we already processed, Safari is replaying it — ignore it.
-  if (cleaned === lastTranscript) return;
+  if (cleaned === lastTranscript) return;  // phantom repeat — ignore
+  lastTranscript = cleaned;
 
   const heard = cleaned.split(/\s+/).filter(w => w.length > 1);
   if (!heard.length) return;
 
-  const afterPause = needsConfirm || (Date.now() - lastFinalTime > 2500);
+  // Only use the last word — it's the one just spoken.
+  // Using the full sentence causes jumps when Safari batches words.
+  const hw = heard[heard.length - 1];
 
-  // After a pause we search a small window forward from currentIdx only.
-  // This prevents the text from jumping to any OTHER occurrence of the word
-  // elsewhere in the script.
-  const searchWindow = afterPause ? MAX_FWD : 40;
+  // Tight forward-only window — prevents jumping to later occurrences
+  const WINDOW = 8;
+  let bestIdx = -1, bestScore = 0;
+  const end = Math.min(words.length, currentIdx + WINDOW);
 
-  let searchFrom = currentIdx;
-  let moved = false;
+  for (let i = currentIdx; i < end; i++) {
+    const s = diceSim(hw, words[i]);
+    if (s > bestScore && s > 0.72) { bestScore = s; bestIdx = i; }
+  }
 
-  heard.forEach(hw => {
-    let bestIdx = -1, bestScore = 0;
-    const end = Math.min(words.length, searchFrom + searchWindow);
-    for (let i = searchFrom; i < end; i++) {
-      const s = diceSim(hw, words[i]);
-      if (s > bestScore && s > 0.68) { bestScore = s; bestIdx = i; }
-    }
-
-    if (bestIdx !== -1 && bestIdx >= searchFrom) {
-      if (afterPause || needsConfirm) {
-        confirmCount++;
-        if (confirmCount >= 2) {
-          needsConfirm = false;
-          confirmCount = 0;
-          setIdx(bestIdx);
-          moved = true;
-        }
-        // Single very confident match also accepted
-        else if (bestScore > 0.92) {
-          needsConfirm = false;
-          confirmCount = 0;
-          setIdx(bestIdx);
-          moved = true;
-        }
-      } else {
-        setIdx(bestIdx);
-        moved = true;
-      }
-      searchFrom = bestIdx + 1;
-    }
-  });
-
-  if (moved) {
-    lastFinalTime  = Date.now();
-    lastTranscript = cleaned;
+  if (bestIdx !== -1 && bestIdx > currentIdx) {
+    setIdx(bestIdx);
+    lastFinalTime = Date.now();
   }
 }
 
@@ -642,16 +609,15 @@ function buildRecognition() {
     blockTimer = setTimeout(() => { srBlocked = false; }, BLOCK_MS);
   }
 
-  let lastResultIndex = -1;  // track SR result index to detect replayed results
+  let lastResultIndex = -1;
 
   r.onresult = e => {
-    // If resultIndex hasn't advanced since last time, Safari is replaying — skip
-    if (e.resultIndex <= lastResultIndex) return;
+    if (e.resultIndex <= lastResultIndex) return;  // replay guard
     lastResultIndex = e.resultIndex;
 
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (e.results[i].isFinal) {
-        matchTranscript(e.results[i][0].transcript, true);
+        matchTranscript(e.results[i][0].transcript);
       }
     }
   };
@@ -671,8 +637,6 @@ function buildRecognition() {
   r.onspeechend = () => {
     speechActive   = false;
     speechEndedAt  = Date.now();
-    needsConfirm   = true;
-    confirmCount   = 0;
     lastTranscript = '';
     setHudState('paused');
   };
