@@ -1,4 +1,4 @@
-# fechtenburg.github.io
+# teleprompter
 # 🎙 Voice-Driven Teleprompter
 
 A professional teleprompter that listens to your voice and automatically scrolls to keep up with your reading. No internet connection required after the first visit.
