@@ -11,6 +11,12 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <title>Teleprompter</title>
+  <!-- Google API Client & Identity Services -->
+  <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+  <script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+  <!-- Konfiguration (Nøgler) -->
+  <script src="config.js"></script>
+
   <style>
     :root {
       --red:    #e63946;
@@ -87,6 +93,26 @@
       transition: background 0.15s, transform 0.1s;
     }
     .start-btn:active { background: #c1121f; transform: scale(0.96); }
+    
+    .drive-btn {
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 11px 18px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 8px;
+      transition: background 0.15s, transform 0.1s;
+      margin-left: 10px;
+    }
+    .drive-btn:active { background: #174ea6; transform: scale(0.96); }
+    .drive-btn svg { width: 18px; height: 18px; fill: currentColor; }
+    .drive-btn.loading { opacity: 0.7; pointer-events: none; }
+
 
     .settings-row {
       display: flex;
@@ -338,7 +364,13 @@
       <div class="logo-dot"></div>
       <span class="app-name">Teleprompter</span>
     </div>
-    <button class="start-btn" onclick="startPrompter()">START ▶</button>
+    <div style="display: flex; align-items: center;">
+      <button class="drive-btn" id="drive-btn" onclick="handleAuthClick()">
+        <svg viewBox="0 0 87.3 78"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z"/><path d="m43.65 23 13.75-23.8c-1.55-.8-3.1-1.2-4.5-1.2h-27.5c-1.45 0-2.95.4-4.5 1.2z"/><path d="m63.55 53h-39.8l-13.75 23.8c1.35.8 2.85 1.2 4.35 1.2h58.7c1.5 0 3-.4 4.5-1.2z"/><path d="m69.95 23h-27.5l13.75 23.8 13.75 23.8c1.3-1.2 2.45-2.6 3.2-4.2l12.75-22.1c.8-1.4 1.2-3 1.2-4.5s-.4-3.1-1.2-4.5z"/><path d="m43.65 23 13.75 23.8h27.5c0-1.55-.4-3.1-1.2-4.5l-12.75-22.1c-.8-1.4-1.95-2.5-3.3-3.3z"/><path d="m27.35 53 16.3-28.2-16.4-28.2c-1.4.8-2.5 1.9-3.3 3.3l-22.7 39.3c-.8 1.4-1.2 3-1.2 4.5s.4 3.1 1.2 4.5z"/></svg>
+        <span>G-Drive</span>
+      </button>
+      <button class="start-btn" onclick="startPrompter()" style="margin-left:12px;">START ▶</button>
+    </div>
   </div>
 
   <div class="settings-row">
@@ -802,6 +834,119 @@ function stopPrompter() {
   clearTimeout(fadeTimer);
   document.getElementById('prompter-screen').classList.add('hidden');
   document.getElementById('editor-screen').classList.remove('hidden');
+  if (wakeLock) {
+    wakeLock.release();
+    wakeLock = null;
+  }
+}
+
+/* ════════════════════════════════
+   GOOGLE DRIVE INTEGRATION
+════════════════════════════════ */
+// CLIENT_ID og API_KEY er nu flyttet til config.js
+
+const DISCOVERY_DOCS = ["https://docs.googleapis.com/v1/documents/:get"];
+const SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/documents.readonly';
+
+let tokenClient;
+let gapiInited = false;
+let gisInited  = false;
+
+function gapiLoaded() { gapi.load('client:picker', initializeGapiClient); }
+async function initializeGapiClient() {
+  await gapi.client.init({ apiKey: API_KEY, discoveryDocs: DISCOVERY_DOCS });
+  gapiInited = true;
+}
+function gisLoaded() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: '', // defined at request time
+  });
+  gisInited = true;
+}
+
+function handleAuthClick() {
+  if (!gapiInited || !gisInited) return;
+
+  const btn = document.getElementById('drive-btn');
+  btn.classList.add('loading');
+  btn.querySelector('span').textContent = 'Logger ind...';
+
+  tokenClient.callback = async (resp) => {
+    if (resp.error !== undefined) { 
+      btn.classList.remove('loading');
+      btn.querySelector('span').textContent = 'G-Drive';
+      throw (resp);
+    }
+    createPicker(resp.access_token);
+  };
+
+  if (gapi.client.getToken() === null) {
+    tokenClient.requestAccessToken({prompt: 'consent'});
+  } else {
+    tokenClient.requestAccessToken({prompt: ''});
+  }
+}
+
+function createPicker(accessToken) {
+  const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+    .setMimeTypes('application/vnd.google-apps.document');
+
+  const picker = new google.picker.PickerBuilder()
+    .enableFeature(google.picker.Feature.NAV_HIDDEN)
+    .setAppId(CLIENT_ID)
+    .setOAuthToken(accessToken)
+    .addView(view)
+    .setDeveloperKey(API_KEY)
+    .setCallback(pickerCallback)
+    .build();
+  picker.setVisible(true);
+}
+
+async function pickerCallback(data) {
+  const btn = document.getElementById('drive-btn');
+  if (data.action === google.picker.Action.PICKED) {
+    const docId = data.docs[0].id;
+    btn.querySelector('span').textContent = 'Henter...';
+    await fetchGoogleDoc(docId);
+  }
+  
+  if (data.action === google.picker.Action.CANCEL || data.action === google.picker.Action.PICKED) {
+    btn.classList.remove('loading');
+    btn.querySelector('span').textContent = 'G-Drive';
+  }
+}
+
+async function fetchGoogleDoc(docId) {
+  try {
+    // Note: We use the Docs API directly via gapi.client
+    const response = await gapi.client.request({
+      path: `https://docs.googleapis.com/v1/documents/${docId}`,
+    });
+    const doc = response.result;
+    const text = extractTextFromDoc(doc);
+    
+    document.getElementById('script-input').value = text;
+    updateWordCount();
+  } catch (err) {
+    console.error('Error fetching doc:', err);
+    alert('Kunne ikke hente dokumentet. Tjek dine rettigheder.');
+  }
+}
+
+function extractTextFromDoc(doc) {
+  let fullText = '';
+  doc.body.content.forEach(element => {
+    if (element.paragraph) {
+      element.paragraph.elements.forEach(el => {
+        if (el.textRun) {
+          fullText += el.textRun.content;
+        }
+      });
+    }
+  });
+  return fullText;
 }
 
 /* ════════════════════════════════
