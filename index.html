@@ -417,6 +417,7 @@ const BLOCK_MS    = 1500;    // block SR for this long after every restart
 const MAX_FWD     = 12;      // max words to advance per final result after a pause
 let needsConfirm  = false;   // true after pause — require 2 consecutive good words
 let confirmCount  = 0;
+let lastTranscript = '';     // last accepted transcript — used to detect phantom repeats
 
 const LANGS = [
   { code: 'da-DK', label: 'DA' },
@@ -545,61 +546,67 @@ function diceSim(a, b) {
 
 /* ════════════════════════════════
    SPEECH → WORD POSITION
-
-   Strategy:
-   - ONLY use isFinal results (interim causes jumpy behaviour on iOS Safari)
-   - After every SR restart, block all results for BLOCK_MS
-   - After a pause, require CONFIRM_WORDS consecutive matches before moving
-   - Never advance more than MAX_FWD words in one result after a pause
 ════════════════════════════════ */
 function matchTranscript(transcript, isFinal) {
-  if (!isFinal) return;         // ignore interim entirely — too unreliable on iOS
-  if (srBlocked) return;        // still in post-restart blackout window
+  if (!isFinal) return;
+  if (srBlocked) return;
 
-  const heard = transcript.toLowerCase()
-    .replace(/[^a-zæøåéàüöä0-9\s]/g, '')
-    .trim().split(/\s+/).filter(w => w.length > 1); // min 2 chars
+  // Normalise transcript for comparison
+  const cleaned = transcript.toLowerCase()
+    .replace(/[^a-zæøåéàüöä0-9\s]/g, '').trim();
 
+  // PHANTOM CHECK: if this transcript is identical (or nearly so) to the
+  // last one we already processed, Safari is replaying it — ignore it.
+  if (cleaned === lastTranscript) return;
+
+  const heard = cleaned.split(/\s+/).filter(w => w.length > 1);
   if (!heard.length) return;
 
-  const timeSinceLast = Date.now() - lastFinalTime;
-  const afterPause    = timeSinceLast > 2500 || needsConfirm;
-  const window        = afterPause ? MAX_FWD : 35;
+  const afterPause = needsConfirm || (Date.now() - lastFinalTime > 2500);
+
+  // After a pause we search a small window forward from currentIdx only.
+  // This prevents the text from jumping to any OTHER occurrence of the word
+  // elsewhere in the script.
+  const searchWindow = afterPause ? MAX_FWD : 40;
 
   let searchFrom = currentIdx;
-  let matched    = 0;
+  let moved = false;
 
   heard.forEach(hw => {
     let bestIdx = -1, bestScore = 0;
-    const end = Math.min(words.length, searchFrom + window);
+    const end = Math.min(words.length, searchFrom + searchWindow);
     for (let i = searchFrom; i < end; i++) {
       const s = diceSim(hw, words[i]);
-      if (s > bestScore && s > 0.65) { bestScore = s; bestIdx = i; }
+      if (s > bestScore && s > 0.68) { bestScore = s; bestIdx = i; }
     }
-    if (bestIdx !== -1) {
-      matched++;
-      searchFrom = bestIdx + 1;
 
+    if (bestIdx !== -1 && bestIdx >= searchFrom) {
       if (afterPause || needsConfirm) {
-        // Confirmation mode: count consecutive matches, don't move yet
         confirmCount++;
         if (confirmCount >= 2) {
           needsConfirm = false;
           confirmCount = 0;
-          setIdx(bestIdx); // now safe to move
-        }
-        // Only move on first match if confidence is very high
-        else if (bestScore > 0.90 && !needsConfirm) {
           setIdx(bestIdx);
+          moved = true;
+        }
+        // Single very confident match also accepted
+        else if (bestScore > 0.92) {
+          needsConfirm = false;
+          confirmCount = 0;
+          setIdx(bestIdx);
+          moved = true;
         }
       } else {
         setIdx(bestIdx);
+        moved = true;
       }
+      searchFrom = bestIdx + 1;
     }
   });
 
-  if (matched > 0) {
-    lastFinalTime = Date.now();
+  if (moved) {
+    lastFinalTime  = Date.now();
+    lastTranscript = cleaned;
   }
 }
 
@@ -641,8 +648,9 @@ function buildRecognition() {
 
   r.onspeechend = () => {
     setHudState('paused');
-    needsConfirm = true;  // require confirmation words before moving after resume
-    confirmCount = 0;
+    needsConfirm   = true;
+    confirmCount   = 0;
+    lastTranscript = ''; // clear so the NEXT real phrase is always accepted
   };
 
   r.onerror = e => {
