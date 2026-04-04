@@ -1,38 +1,38 @@
 # Teleprompter PWA
 
-En professionel, stemmestyret teleprompter-app bygget som en Progressive Web App (PWA), som er designet særligt til iOS (Safari) men også fungerer på andre moderne browsere. Denne app lytter til din oplæsning og scroller automatisk teksten, så du altid ved, hvor du er.
+A professional, voice-controlled teleprompter app built as a Progressive Web App (PWA), specifically designed for iOS (Safari) but fully functional on other modern browsers. This app listens while you read and automatically scrolls the text, so you never lose your place.
 
-## 🚀 Funktioner
+## 🚀 Features
 
-- **Stemmestyret Scrolling:** Appen benytter Web Speech API til at lytte til dig. Den fremhæver det aktive ord, som du læser, og stopper automatisk med at scrolle, hvis du holder pause.
-- **Spejlvending (Mirror Mode):** Kan spejlvende teksten, hvilket gør den perfekt til brug i fysiske teleprompter-rigs med et halvtgennemsigtigt spejl.
-- **Flersproget Understøttelse:** Understøtter stemmegenkendelse på flere sprog: Dansk (DA), Engelsk (EN), Norsk (NO), Svensk (SV) og Tysk (DE).
-- **Tilpasning af Tekst:** Juster nemt tekststørrelsen direkte i appen, så den passer til din læseafstand.
-- **Touch & Swipe Controls:** Du kan nemt swipe op eller ned for manuelt at hoppe frem og tilbage i teksten, mens du præsenterer. 
-- **Offline Understøttelse:** Da appen er en PWA med en Service Worker (`sw.js`), kan den installeres på din enheds startskærm (Add to Home Screen) og bruges helt uden internetforbindelse efter første indlæsning.
-- **Fokus-tilstand:** Clean, mørkt overlay i prompter-tilstanden med en diskret fokus-linje, der gør det let for øjnene.
+- **Voice-Controlled Scrolling:** The app uses the Web Speech API to listen to your voice. It highlights the active word as you read and accurately scrolls the text as you progress, pausing exactly when you do.
+- **Mirror Mode:** Can mirror the text, making it perfect for use in physical teleprompter rigs with a beam-splitter glass.
+- **Multi-Language Support:** Supports speech recognition for multiple languages: Danish (DA), English (EN), Norwegian (NO), Swedish (SV), and German (DE).
+- **Text Customization:** Easily adjust the text size directly within the app to fit your reading distance.
+- **Touch & Swipe Controls:** You can easily swipe up or down to manually jump forward or backward in the text while presenting.
+- **Offline Support:** Because the app is a PWA with a Service Worker (`sw.js`), it can be installed on your device's home screen (Add to Home Screen) and used completely offline after the very first load.
+- **Focus Mode:** Clean, dark overlay in prompter mode with a subtle focus line, making it very easy on the eyes.
 
-## 🛠 Teknisk Overblik
+## 🛠 Technical Overview
 
-Appen er bygget med rene, moderne web-teknologier og er helt uafhængig af tunge frameworks:
-- **HTML/CSS/JavaScript (Vanilla):** Alt er skrevet i ét primært HTML-dokument for simpel distribution og lynhurtig indlæsningstid.
-- **Web Speech API:** Håndterer the voice recognition ved kontinuerligt at lytte til mikrofonen. 
-- **Dice Bigram Similarity:** En avanceret og indbygget "fuzzy matching" algoritme, som sammenligner de talte ord med manuskriptet, hvilket forhindrer appen i at hoppe uforudsigeligt, hvis et ord udtales lidt skævt eller genkendes forkert (især på iOS Safari).
+The app is built using clean, modern web technologies and is completely independent of heavy frameworks:
+- **HTML/CSS/JavaScript (Vanilla):** Everything is written in a single primary HTML document for simple distribution and lightning-fast loading times.
+- **Web Speech API:** Handles the voice recognition by continuously listening to the microphone via Interim Results. 
+- **Dice Bigram Similarity:** An advanced, built-in "fuzzy matching" algorithm that compares spoken words with the script, preventing the app from jumping unpredictably if a word is mispronounced or incorrectly recognized (especially on iOS Safari).
 
-## 📂 Filer i Projektet
+## 📂 Project Files
 
-- `index.html`: Selve applikationen. Indeholder alt UI (Editor og Prompter), CSS styling og al JavaScript-logikken.
-- `manifest.json`: Web app manifest, der gør det muligt at installere appen (PWA) og definerer farver, ikoner og visningstilstand (fullscreen).
-- `sw.js`: Service Worker-filen, der tager sig af caching af appen, så den fungerer offline (Network-first for skrifttyper, cache-first for resten).
+- `index.html`: The application itself. Contains the entire UI (Editor and Prompter), CSS styling, and JavaScript logic.
+- `manifest.json`: Web app manifest that allows the app to be installed (PWA) and defines colors, icons, and display mode (fullscreen).
+- `sw.js`: The Service Worker file that handles caching. It uses a Network-First strategy to ensure you always get the latest updates when online, but smoothly falls back to offline caching when disconnected.
 
-## 💡 Sådan bruges den
+## 💡 How to Use
 
-1. Åbn `index.html` i en moderne browser (Safari på iOS 15+ anbefales for optimal stemmegenkendelse).
-2. Indsæt dit manuskript i tekstfeltet på startskærmen.
-3. Juster evt. tekststørrelse, sprog og spejling.
-4. Tryk på **START ▶**.
-5. Appen vil bede om adgang til din mikrofon første gang. Tillad dette.
-6. Begynd at læse op. Appen vil automatisk fremhæve ordene og scrolle i dit tempo!
+1. Open `index.html` in a modern browser (Safari on iOS 15+ is recommended for optimal speech recognition).
+2. Paste your script into the text area on the start screen.
+3. Adjust text size, language, and mirror mode as needed.
+4. Press **START ▶**.
+5. The app will ask for microphone access the first time. Allow it.
+6. Start reading aloud. The app will automatically highlight the words and scroll at your pace!
 
 ---
-*Udviklet med fokus på pålidelighed og brugervenlighed under videooptagelser.*
+*Developed with a focus on reliability and user-friendliness during video recordings.*
