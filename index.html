@@ -410,15 +410,17 @@ let restartTimer = null;
 let fadeTimer    = null;
 
 // Safari SR phantom guard
-let srBlocked     = false;
-let blockTimer    = null;
-let lastFinalTime = 0;
-const BLOCK_MS    = 1500;
-const MAX_FWD     = 12;
-let needsConfirm  = false;
-let confirmCount  = 0;
+let srBlocked      = false;
+let blockTimer     = null;
+let lastFinalTime  = 0;
+const BLOCK_MS     = 1500;
+const MAX_FWD      = 12;
+let needsConfirm   = false;
+let confirmCount   = 0;
 let lastTranscript = '';
-let speechActive  = false;  // true ONLY between onspeechstart and onspeechend
+let speechActive   = false;
+let speechEndedAt  = 0;      // timestamp when onspeechend fired
+const POST_SPEECH_GRACE = 400; // ignore results for this many ms after onspeechend
 
 const LANGS = [
   { code: 'da-DK', label: 'DA' },
@@ -551,7 +553,15 @@ function diceSim(a, b) {
 function matchTranscript(transcript, isFinal) {
   if (!isFinal) return;
   if (srBlocked) return;
-  if (!speechActive) return;  // speech has ended — ignore everything until next onspeechstart
+
+  const now = Date.now();
+
+  // Hard block: speech has ended and we're still in the grace window.
+  // Safari routinely delivers final results 100-300ms after onspeechend.
+  if (!speechActive && (now - speechEndedAt) < POST_SPEECH_GRACE) return;
+
+  // Also block if speech is not active at all (pause state)
+  if (!speechActive && speechEndedAt > 0) return;
 
   // Normalise transcript for comparison
   const cleaned = transcript.toLowerCase()
@@ -632,12 +642,13 @@ function buildRecognition() {
     blockTimer = setTimeout(() => { srBlocked = false; }, BLOCK_MS);
   }
 
-  r.onstart = () => {
-    setHudState('listening');
-    blockSR(); // always block on start — Safari sends stale results immediately
-  };
+  let lastResultIndex = -1;  // track SR result index to detect replayed results
 
   r.onresult = e => {
+    // If resultIndex hasn't advanced since last time, Safari is replaying — skip
+    if (e.resultIndex <= lastResultIndex) return;
+    lastResultIndex = e.resultIndex;
+
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (e.results[i].isFinal) {
         matchTranscript(e.results[i][0].transcript, true);
@@ -645,13 +656,21 @@ function buildRecognition() {
     }
   };
 
+  r.onstart = () => {
+    lastResultIndex = -1;  // reset on each new recognition session
+    setHudState('listening');
+    blockSR();
+  };
+
   r.onspeechstart = () => {
-    speechActive = true;
+    speechActive  = true;
+    speechEndedAt = 0;  // clear the pause lock
     setHudState('listening');
   };
 
   r.onspeechend = () => {
-    speechActive   = false;  // LOCK — no results accepted until next onspeechstart
+    speechActive   = false;
+    speechEndedAt  = Date.now();
     needsConfirm   = true;
     confirmCount   = 0;
     lastTranscript = '';
