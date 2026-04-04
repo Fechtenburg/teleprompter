@@ -399,8 +399,8 @@
 /* ════════════════════════════════
    STATE
 ════════════════════════════════ */
-let words        = [];   // normalized words for matching
-let wordEls      = [];   // DOM spans
+let words        = [];
+let wordEls      = [];
 let currentIdx   = 0;
 let isListening  = false;
 let isMirrored   = false;
@@ -409,11 +409,14 @@ let recognition  = null;
 let restartTimer = null;
 let fadeTimer    = null;
 
-// Pause/restart guards
-let justRestarted   = false;  // true for first ~800ms after a recognition restart
-let stabilizeTimer  = null;   // clears justRestarted flag
-let lastSpeechTime  = 0;      // timestamp of last confirmed speech
-const MAX_JUMP      = 12;     // max words allowed to advance in one interim result
+// Safari SR phantom guard
+let srBlocked     = false;   // ignore ALL SR output when true
+let blockTimer    = null;
+let lastFinalTime = 0;
+const BLOCK_MS    = 1500;    // block SR for this long after every restart
+const MAX_FWD     = 12;      // max words to advance per final result after a pause
+let needsConfirm  = false;   // true after pause — require 2 consecutive good words
+let confirmCount  = 0;
 
 const LANGS = [
   { code: 'da-DK', label: 'DA' },
@@ -542,59 +545,61 @@ function diceSim(a, b) {
 
 /* ════════════════════════════════
    SPEECH → WORD POSITION
-   Match each final transcript against
-   the script, advancing currentIdx
+
+   Strategy:
+   - ONLY use isFinal results (interim causes jumpy behaviour on iOS Safari)
+   - After every SR restart, block all results for BLOCK_MS
+   - After a pause, require CONFIRM_WORDS consecutive matches before moving
+   - Never advance more than MAX_FWD words in one result after a pause
 ════════════════════════════════ */
 function matchTranscript(transcript, isFinal) {
-  // Ignore ALL results for a short window after recognition restarts —
-  // Safari often replays the last heard phrase as a phantom result.
-  if (justRestarted && !isFinal) return;
+  if (!isFinal) return;         // ignore interim entirely — too unreliable on iOS
+  if (srBlocked) return;        // still in post-restart blackout window
 
   const heard = transcript.toLowerCase()
     .replace(/[^a-zæøåéàüöä0-9\s]/g, '')
-    .trim().split(/\s+/).filter(w => w.length > 0);
+    .trim().split(/\s+/).filter(w => w.length > 1); // min 2 chars
 
   if (!heard.length) return;
 
-  if (isFinal) {
-    // After a pause, be conservative: cap how far we can jump in one go.
-    const pauseDuration = Date.now() - lastSpeechTime;
-    const maxJumpFinal  = pauseDuration > 2000 ? MAX_JUMP : 40;
+  const timeSinceLast = Date.now() - lastFinalTime;
+  const afterPause    = timeSinceLast > 2500 || needsConfirm;
+  const window        = afterPause ? MAX_FWD : 35;
 
-    let searchFrom = currentIdx;
-    heard.forEach(hw => {
-      const WINDOW = Math.min(maxJumpFinal, 25);
-      let bestIdx = -1, bestScore = 0;
-      const end = Math.min(words.length, searchFrom + WINDOW);
-      for (let i = searchFrom; i < end; i++) {
-        const s = diceSim(hw, words[i]);
-        if (s > bestScore && s > 0.60) { bestScore = s; bestIdx = i; }
-      }
-      if (bestIdx !== -1) {
-        setIdx(bestIdx);
-        searchFrom = bestIdx + 1;
-      }
-    });
-    lastSpeechTime = Date.now();
+  let searchFrom = currentIdx;
+  let matched    = 0;
 
-  } else {
-    // Interim: match only the last heard word, strict threshold,
-    // and hard cap on how far forward we can jump at once.
-    const hw = heard[heard.length - 1];
-    if (hw.length < 2) return; // ignore single-char noise
-
-    const WINDOW = Math.min(MAX_JUMP, 20);
+  heard.forEach(hw => {
     let bestIdx = -1, bestScore = 0;
-    const end = Math.min(words.length, currentIdx + WINDOW);
-    for (let i = currentIdx; i < end; i++) {
+    const end = Math.min(words.length, searchFrom + window);
+    for (let i = searchFrom; i < end; i++) {
       const s = diceSim(hw, words[i]);
-      if (s > bestScore && s > 0.68) { bestScore = s; bestIdx = i; }
+      if (s > bestScore && s > 0.65) { bestScore = s; bestIdx = i; }
     }
-    // Only advance — never go backwards on interim
-    if (bestIdx !== -1 && bestIdx > currentIdx) {
-      setIdx(bestIdx);
-      lastSpeechTime = Date.now();
+    if (bestIdx !== -1) {
+      matched++;
+      searchFrom = bestIdx + 1;
+
+      if (afterPause || needsConfirm) {
+        // Confirmation mode: count consecutive matches, don't move yet
+        confirmCount++;
+        if (confirmCount >= 2) {
+          needsConfirm = false;
+          confirmCount = 0;
+          setIdx(bestIdx); // now safe to move
+        }
+        // Only move on first match if confidence is very high
+        else if (bestScore > 0.90 && !needsConfirm) {
+          setIdx(bestIdx);
+        }
+      } else {
+        setIdx(bestIdx);
+      }
     }
+  });
+
+  if (matched > 0) {
+    lastFinalTime = Date.now();
   }
 }
 
@@ -607,53 +612,50 @@ function buildRecognition() {
 
   const r = new SR();
   r.continuous      = true;
-  r.interimResults  = true;
+  r.interimResults  = false;  // final only — eliminates most phantom behaviour
   r.maxAlternatives = 1;
   r.lang            = LANGS[langIdx].code;
 
+  function blockSR() {
+    srBlocked = true;
+    clearTimeout(blockTimer);
+    blockTimer = setTimeout(() => { srBlocked = false; }, BLOCK_MS);
+  }
+
   r.onstart = () => {
     setHudState('listening');
-    // Block matching for 800ms after each restart to suppress phantom results
-    justRestarted = true;
-    clearTimeout(stabilizeTimer);
-    stabilizeTimer = setTimeout(() => { justRestarted = false; }, 800);
+    blockSR(); // always block on start — Safari sends stale results immediately
   };
 
   r.onresult = e => {
-    let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
-      const t = e.results[i][0].transcript;
       if (e.results[i].isFinal) {
-        matchTranscript(t, true);
-        document.getElementById('interim-display').textContent = '';
-      } else {
-        interim += t;
-        matchTranscript(t, false);
+        matchTranscript(e.results[i][0].transcript, true);
       }
     }
-    if (interim) document.getElementById('interim-display').textContent = interim;
   };
 
-  r.onspeechstart = () => setHudState('listening');
-  r.onspeechend   = () => {
+  r.onspeechstart = () => {
+    setHudState('listening');
+  };
+
+  r.onspeechend = () => {
     setHudState('paused');
-    document.getElementById('interim-display').textContent = '';
+    needsConfirm = true;  // require confirmation words before moving after resume
+    confirmCount = 0;
   };
 
   r.onerror = e => {
     if (e.error === 'no-speech' || e.error === 'aborted') return;
-    console.warn('SR:', e.error);
+    console.warn('SR error:', e.error);
     setHudState('paused');
   };
 
   r.onend = () => {
     if (isListening) {
       restartTimer = setTimeout(() => {
-        justRestarted = true;
-        clearTimeout(stabilizeTimer);
-        stabilizeTimer = setTimeout(() => { justRestarted = false; }, 800);
         try { recognition.start(); } catch(ex) {}
-      }, 250);
+      }, 300);
     }
   };
 
