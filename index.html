@@ -21,7 +21,7 @@
       --border: #242424;
       --text:   #f0ede8;
       --muted:  #555;
-      --font-size: 52px;
+      --font-size: 36px;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -345,7 +345,7 @@
     <div class="setting-group">
       <span class="setting-label">Tekststørrelse</span>
       <button class="step-btn" onclick="adjustFontSize(-4)">−</button>
-      <span class="setting-value" id="size-display">52</span>
+      <span class="setting-value" id="size-display">36</span>
       <button class="step-btn" onclick="adjustFontSize(4)">+</button>
     </div>
     <div class="divider"></div>
@@ -407,10 +407,11 @@ let wordEls      = [];
 let currentIdx   = 0;
 let isListening  = false;
 let isMirrored   = false;
-let fontSize     = 52;
+let fontSize     = 36;
 let recognition  = null;
 let restartTimer = null;
 let fadeTimer    = null;
+let wakeLock     = null;
 
 // Safari SR phantom guard
 let srBlocked      = false;
@@ -772,10 +773,28 @@ function startPrompter() {
   document.getElementById('scroll-container').style.transform = 'translateY(0)';
   applyHighlight(0);
 
+  requestWakeLock();
   showControls();
   setTimeout(() => startListening(), 400);
   scheduleControlsFade();
 }
+
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log('Wake Lock acquired');
+    }
+  } catch (err) {
+    console.warn(`Wake Lock error: ${err.name}, ${err.message}`);
+  }
+}
+
+document.addEventListener('visibilitychange', async () => {
+  if (wakeLock !== null && document.visibilityState === 'visible') {
+    requestWakeLock();
+  }
+});
 
 function stopPrompter() {
   stopListening();

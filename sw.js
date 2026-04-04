@@ -1,5 +1,5 @@
-/* Teleprompter PWA — Service Worker v3 */
-const CACHE = 'prompter-v3';
+/* Teleprompter PWA — Service Worker v4 */
+const CACHE = 'prompter-v4';
 const ASSETS = [
   './',
   './index.html',
