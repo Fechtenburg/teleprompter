@@ -410,14 +410,15 @@ let restartTimer = null;
 let fadeTimer    = null;
 
 // Safari SR phantom guard
-let srBlocked     = false;   // ignore ALL SR output when true
+let srBlocked     = false;
 let blockTimer    = null;
 let lastFinalTime = 0;
-const BLOCK_MS    = 1500;    // block SR for this long after every restart
-const MAX_FWD     = 12;      // max words to advance per final result after a pause
-let needsConfirm  = false;   // true after pause — require 2 consecutive good words
+const BLOCK_MS    = 1500;
+const MAX_FWD     = 12;
+let needsConfirm  = false;
 let confirmCount  = 0;
-let lastTranscript = '';     // last accepted transcript — used to detect phantom repeats
+let lastTranscript = '';
+let speechActive  = false;  // true ONLY between onspeechstart and onspeechend
 
 const LANGS = [
   { code: 'da-DK', label: 'DA' },
@@ -550,6 +551,7 @@ function diceSim(a, b) {
 function matchTranscript(transcript, isFinal) {
   if (!isFinal) return;
   if (srBlocked) return;
+  if (!speechActive) return;  // speech has ended — ignore everything until next onspeechstart
 
   // Normalise transcript for comparison
   const cleaned = transcript.toLowerCase()
@@ -624,6 +626,7 @@ function buildRecognition() {
   r.lang            = LANGS[langIdx].code;
 
   function blockSR() {
+    speechActive = false;  // treat restart as a pause until speech is confirmed
     srBlocked = true;
     clearTimeout(blockTimer);
     blockTimer = setTimeout(() => { srBlocked = false; }, BLOCK_MS);
@@ -643,14 +646,16 @@ function buildRecognition() {
   };
 
   r.onspeechstart = () => {
+    speechActive = true;
     setHudState('listening');
   };
 
   r.onspeechend = () => {
-    setHudState('paused');
+    speechActive   = false;  // LOCK — no results accepted until next onspeechstart
     needsConfirm   = true;
     confirmCount   = 0;
-    lastTranscript = ''; // clear so the NEXT real phrase is always accepted
+    lastTranscript = '';
+    setHudState('paused');
   };
 
   r.onerror = e => {
