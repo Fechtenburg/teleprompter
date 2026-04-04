@@ -409,6 +409,12 @@ let recognition  = null;
 let restartTimer = null;
 let fadeTimer    = null;
 
+// Pause/restart guards
+let justRestarted   = false;  // true for first ~800ms after a recognition restart
+let stabilizeTimer  = null;   // clears justRestarted flag
+let lastSpeechTime  = 0;      // timestamp of last confirmed speech
+const MAX_JUMP      = 12;     // max words allowed to advance in one interim result
+
 const LANGS = [
   { code: 'da-DK', label: 'DA' },
   { code: 'en-US', label: 'EN' },
@@ -540,41 +546,54 @@ function diceSim(a, b) {
    the script, advancing currentIdx
 ════════════════════════════════ */
 function matchTranscript(transcript, isFinal) {
+  // Ignore ALL results for a short window after recognition restarts —
+  // Safari often replays the last heard phrase as a phantom result.
+  if (justRestarted && !isFinal) return;
+
   const heard = transcript.toLowerCase()
     .replace(/[^a-zæøåéàüöä0-9\s]/g, '')
     .trim().split(/\s+/).filter(w => w.length > 0);
 
   if (!heard.length) return;
 
-  // For interim: only match the last heard word (fast feedback)
-  // For final: walk through all heard words sequentially
   if (isFinal) {
+    // After a pause, be conservative: cap how far we can jump in one go.
+    const pauseDuration = Date.now() - lastSpeechTime;
+    const maxJumpFinal  = pauseDuration > 2000 ? MAX_JUMP : 40;
+
     let searchFrom = currentIdx;
     heard.forEach(hw => {
-      const WINDOW = 25;
+      const WINDOW = Math.min(maxJumpFinal, 25);
       let bestIdx = -1, bestScore = 0;
       const end = Math.min(words.length, searchFrom + WINDOW);
       for (let i = searchFrom; i < end; i++) {
         const s = diceSim(hw, words[i]);
-        if (s > bestScore && s > 0.58) { bestScore = s; bestIdx = i; }
+        if (s > bestScore && s > 0.60) { bestScore = s; bestIdx = i; }
       }
       if (bestIdx !== -1) {
         setIdx(bestIdx);
         searchFrom = bestIdx + 1;
       }
     });
+    lastSpeechTime = Date.now();
+
   } else {
-    // Interim: match only last heard word for snappy response
+    // Interim: match only the last heard word, strict threshold,
+    // and hard cap on how far forward we can jump at once.
     const hw = heard[heard.length - 1];
-    const WINDOW = 20;
+    if (hw.length < 2) return; // ignore single-char noise
+
+    const WINDOW = Math.min(MAX_JUMP, 20);
     let bestIdx = -1, bestScore = 0;
     const end = Math.min(words.length, currentIdx + WINDOW);
     for (let i = currentIdx; i < end; i++) {
       const s = diceSim(hw, words[i]);
-      if (s > bestScore && s > 0.65) { bestScore = s; bestIdx = i; }
+      if (s > bestScore && s > 0.68) { bestScore = s; bestIdx = i; }
     }
+    // Only advance — never go backwards on interim
     if (bestIdx !== -1 && bestIdx > currentIdx) {
       setIdx(bestIdx);
+      lastSpeechTime = Date.now();
     }
   }
 }
@@ -592,7 +611,13 @@ function buildRecognition() {
   r.maxAlternatives = 1;
   r.lang            = LANGS[langIdx].code;
 
-  r.onstart = () => setHudState('listening');
+  r.onstart = () => {
+    setHudState('listening');
+    // Block matching for 800ms after each restart to suppress phantom results
+    justRestarted = true;
+    clearTimeout(stabilizeTimer);
+    stabilizeTimer = setTimeout(() => { justRestarted = false; }, 800);
+  };
 
   r.onresult = e => {
     let interim = '';
@@ -624,6 +649,9 @@ function buildRecognition() {
   r.onend = () => {
     if (isListening) {
       restartTimer = setTimeout(() => {
+        justRestarted = true;
+        clearTimeout(stabilizeTimer);
+        stabilizeTimer = setTimeout(() => { justRestarted = false; }, 800);
         try { recognition.start(); } catch(ex) {}
       }, 250);
     }
