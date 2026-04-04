@@ -155,6 +155,7 @@
       resize: none;
       outline: none;
       -webkit-appearance: none;
+      appearance: none;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
     }
@@ -598,7 +599,7 @@ function buildRecognition() {
 
   const r = new SR();
   r.continuous      = true;
-  r.interimResults  = false;  // final only — eliminates most phantom behaviour
+  r.interimResults  = true;  // enable interim results for smooth scrolling
   r.maxAlternatives = 1;
   r.lang            = LANGS[langIdx].code;
 
@@ -609,21 +610,20 @@ function buildRecognition() {
     blockTimer = setTimeout(() => { srBlocked = false; }, BLOCK_MS);
   }
 
-  let lastResultIndex = -1;
-
   r.onresult = e => {
-    if (e.resultIndex <= lastResultIndex) return;  // replay guard
-    lastResultIndex = e.resultIndex;
-
+    let latestTranscript = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) {
-        matchTranscript(e.results[i][0].transcript);
-      }
+      latestTranscript = e.results[i][0].transcript;
+      matchTranscript(latestTranscript);
+    }
+    
+    // Update interim display to show what the mic is hearing
+    if (latestTranscript) {
+      document.getElementById('interim-display').textContent = latestTranscript.trim();
     }
   };
 
   r.onstart = () => {
-    lastResultIndex = -1;  // reset on each new recognition session
     setHudState('listening');
     blockSR();
   };
