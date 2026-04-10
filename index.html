@@ -473,6 +473,8 @@ function toggleMirror() {
   const btn = document.getElementById('mirror-btn');
   btn.textContent = isMirrored ? 'PÅ' : 'AF';
   btn.style.color = isMirrored ? 'var(--amber)' : '';
+  // Save mirror state so it persists across sessions
+  localStorage.setItem('isMirrored', isMirrored);
 }
 
 function updateWordCount() {
@@ -867,6 +869,26 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initFlipOption);
 } else {
   initFlipOption();
+}
+// Initialise mirror toggle persistence
+function initMirrorOption() {
+  const stored = localStorage.getItem('isMirrored');
+  if (stored !== null) {
+    isMirrored = stored === 'true';
+    const btn = document.getElementById('mirror-btn');
+    if (btn) {
+      btn.textContent = isMirrored ? 'PÅ' : 'AUS';
+      btn.style.color = isMirrored ? 'var(--amber)' : '';
+    }
+    // Apply transform to prompter text if mirrored
+    const pt = document.getElementById('prompter-text');
+    if (pt) pt.style.transform = isMirrored ? 'scaleX(-1)' : '';
+  }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initMirrorOption);
+} else {
+  initMirrorOption();
 }
 </script>
 </body>
