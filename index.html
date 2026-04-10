@@ -261,6 +261,14 @@
       display: flex; align-items: center; gap: 6px;
     }
 
+    /* Flip view when listening */
+    .flipped #prompter-text {
+      transform: scaleX(-1);
+    }
+
+    /* Hide Google Drive button (temporarily) */
+    #drive-btn { display: none; }
+
     .mic-dot {
       width: 8px; height: 8px;
       border-radius: 50%;
@@ -358,7 +366,7 @@
     <div class="setting-group">
       <span class="setting-label">Spejl</span>
       <button class="step-btn" id="mirror-btn" onclick="toggleMirror()"
-        style="width:auto;padding:0 10px;font-size:12px;">AUS</button>
+        style="width:auto;padding:0 10px;font-size:12px;">AF</button>
     </div>
   </div>
 
@@ -398,6 +406,14 @@
   </div>
 </div>
 
+<!-- Flip view toggle (bottom of screen) -->
+<div id="flip-toggle" class="screen hidden" style="position:fixed; inset:0; display:flex; align-items:flex-end; justify-content:center; padding:12px; pointer-events:none;">
+  <label style="background:var(--surface); color:var(--text); padding:8px 12px; border-radius:8px; font-size:14px; display:flex; align-items:center; gap:6px; pointer-events:auto;">
+    <input type="checkbox" id="flip-checkbox" style="transform:scale(1.2);" />
+    Flip view while listening
+  </label>
+</div>
+
 <script>
 /* ════════════════════════════════
    STATE
@@ -426,6 +442,9 @@ let speechActive   = false;
 let speechEndedAt  = 0;      // timestamp when onspeechend fired
 const POST_SPEECH_GRACE = 400; // ignore results for this many ms after onspeechend
 
+// Flip‑view option (persisted in localStorage)
+let flipWhileListening = false;
+
 const LANGS = [
   { code: 'da-DK', label: 'DA' },
   { code: 'en-US', label: 'EN' },
@@ -452,7 +471,7 @@ function cycleLang() {
 function toggleMirror() {
   isMirrored = !isMirrored;
   const btn = document.getElementById('mirror-btn');
-  btn.textContent = isMirrored ? 'PÅ' : 'AUS';
+  btn.textContent = isMirrored ? 'PÅ' : 'AF';
   btn.style.color = isMirrored ? 'var(--amber)' : '';
 }
 
@@ -635,6 +654,7 @@ function buildRecognition() {
     speechActive  = true;
     speechEndedAt = 0;  // clear the pause lock
     setHudState('listening');
+    updateFlipClass();
   };
 
   r.onspeechend = () => {
@@ -642,6 +662,7 @@ function buildRecognition() {
     speechEndedAt  = Date.now();
     lastTranscript = '';
     setHudState('paused');
+    updateFlipClass();
   };
 
   r.onerror = e => {
@@ -676,10 +697,37 @@ function setHudState(state) {
   }
 }
 
+// -------------------------------------------------------------------
+// Flip‑view while listening implementation
+// -------------------------------------------------------------------
+function updateFlipClass() {
+  const shouldFlip = flipWhileListening && speechActive;
+  if (shouldFlip) {
+    document.body.classList.add('flipped');
+  } else {
+    document.body.classList.remove('flipped');
+  }
+}
+
+function initFlipOption() {
+  const cb = document.getElementById('flip-checkbox');
+  const stored = localStorage.getItem('flipWhileListening');
+  flipWhileListening = stored === 'true';
+  if (cb) cb.checked = flipWhileListening;
+  if (cb) {
+    cb.addEventListener('change', () => {
+      flipWhileListening = cb.checked;
+      localStorage.setItem('flipWhileListening', flipWhileListening);
+      updateFlipClass();
+    });
+  }
+}
+
 function toggleListening() {
   isListening ? stopListening() : startListening();
   showControls();
   if (isListening) scheduleControlsFade();
+  updateFlipClass();
 }
 
 function startListening() {
@@ -693,6 +741,7 @@ function startListening() {
   document.getElementById('mic-btn').classList.add('active');
   document.getElementById('mic-btn').textContent = '⏹';
   try { recognition.start(); } catch(e) {}
+  updateFlipClass();
 }
 
 function stopListening() {
@@ -703,6 +752,7 @@ function stopListening() {
   document.getElementById('interim-display').textContent = '';
   setHudState('idle');
   try { recognition.stop(); } catch(e) {}
+  updateFlipClass();
 }
 
 /* ════════════════════════════════
@@ -812,6 +862,12 @@ if ('serviceWorker' in navigator) {
 }
 
 updateWordCount();
+// Initialise flip view option after DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initFlipOption);
+} else {
+  initFlipOption();
+}
 </script>
 </body>
 </html>
