@@ -375,7 +375,9 @@
     <textarea id="script-input"
       placeholder="Indsæt dit manuskript her...&#10;&#10;Mikrofonen lytter til din oplæsning og fremhæver det aktive ord. Stopper du med at tale, stopper scrollet automatisk."
       oninput="updateWordCount()"></textarea>
-    <div class="word-count" id="word-count">0 ord</div>
+    <div class="word-count" id="status" style="font-size:11px;color:var(--muted);">
+      <span id="duration-est">0s</span> | <span id="word-count">0 ord</span>
+    </div>
   </div>
 </div>
 
@@ -481,6 +483,12 @@ function updateWordCount() {
   const t = document.getElementById('script-input').value.trim();
   document.getElementById('word-count').textContent =
     (t ? t.split(/\s+/).length : 0) + ' ord';
+  // Estimate duration assuming average speaking speed of 130 words per minute
+  const wordCount = t ? t.split(/\s+/).length : 0;
+  const minutes = Math.floor(wordCount / 130);
+  const seconds = Math.round((wordCount % 130) / 130 * 60);
+  const durStr = (minutes > 0 ? minutes + 'm ' : '') + seconds + 's';
+  document.getElementById('duration-est').textContent = durStr;
 }
 
 /* ════════════════════════════════
